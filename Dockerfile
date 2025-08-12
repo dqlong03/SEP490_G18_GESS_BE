@@ -13,6 +13,7 @@ COPY GESS.Model/*.csproj GESS.Model/
 COPY GESS.Service/*.csproj GESS.Service/
 COPY Gess.Repository/*.csproj Gess.Repository/
 COPY GessCommon/*.csproj GessCommon/
+COPY GESS.Test/*.csproj GESS.Test/
 
 # Restore packages
 RUN dotnet restore
