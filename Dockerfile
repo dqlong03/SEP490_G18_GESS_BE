@@ -36,4 +36,4 @@ COPY --from=build /app/publish .
 # Kiểm tra file trong thư mục runtime
 RUN ls -l /app
 
-ENTRYPOINT ["dotnet", "Gess.Api.dll"]
+ENTRYPOINT ["dotnet", "GESS.Api.dll"]
