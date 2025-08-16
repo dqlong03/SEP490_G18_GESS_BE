@@ -61,21 +61,20 @@ namespace GESS.Entity.Entities
         public Semester Semester { get; set; }
 
         // Khóa ngoại liên kết đến lớp học (Class), 1 kỳ thi thuộc 1 lớp học
-        public int ClassId { get; set; }
-        public Class Class { get; set; }
-
-        // Phòng thi và ca thi mà kỳ thi này diễn ra (1 kỳ thi diễn ra ở 1 phòng/ca)
-        public ExamSlotRoom ExamSlotRoom { get; set; }
+        public int ? ClassId { get; set; }
+        public Class ? Class { get; set; }
 
         // Danh sách đề thi tự luận được sử dụng trong kỳ thi này (qua bảng trung gian NoPEPaperInPE)
         public ICollection<NoPEPaperInPE> NoPEPaperInPEs { get; set; }
 
         // Lịch sử thi của sinh viên trong kỳ thi này (qua bảng trung gian PracticeExamHistory)
         public ICollection<PracticeExamHistory> PracticeExamHistories { get; set; }
+        public ICollection<ExamSlotRoom> ExamSlotRooms { get; set; } // thêm navigation
 
         // Constructor khởi tạo các danh sách
         public PracticeExam()
         {
+            ExamSlotRooms = new List<ExamSlotRoom>();
             NoPEPaperInPEs = new List<NoPEPaperInPE>();
             PracticeExamHistories = new List<PracticeExamHistory>();
         }

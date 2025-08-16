@@ -13,6 +13,7 @@ using System.Security.Claims;
 using System.Text;
 using System.Threading.Tasks;
 using Google.Apis.Auth;
+using GESS.Common;
 
 namespace GESS.Service.authservice
 {
@@ -316,11 +317,13 @@ namespace GESS.Service.authservice
         {
             try
             {
+                // Validate Google token
                 var payload = await GoogleJsonWebSignature.ValidateAsync(model.IdToken, new GoogleJsonWebSignature.ValidationSettings
                 {
                     Audience = new[] { _configuration["Authenticationdesk:Google:ClientId"] }
                 });
 
+                // Tìm user theo email
                 var user = await _userManager.FindByEmailAsync(payload.Email);
                 if (user == null)
                 {
@@ -332,7 +335,7 @@ namespace GESS.Service.authservice
 
                 // Kiểm tra role - chỉ cho phép học sinh đăng nhập
                 var userRoles = await _userManager.GetRolesAsync(user);
-                if (!userRoles.Contains("Học sinh"))
+                if (!userRoles.Contains(PredefinedRole.STUDENT_ROLE))
                 {
                     return new GoogleLoginDesktopResult { Success = false, ErrorMessage = "Chỉ học sinh mới có quyền đăng nhập qua desktop app" };
                 }
@@ -383,9 +386,18 @@ namespace GESS.Service.authservice
                     StudentName = user.Fullname
                 };
             }
-            catch (Exception ex)
+            catch (InvalidJwtException ex)
             {
                 return new GoogleLoginDesktopResult { Success = false, ErrorMessage = "Token Google không hợp lệ: " + ex.Message };
+            }
+            catch (ArgumentException ex)
+            {
+                return new GoogleLoginDesktopResult { Success = false, ErrorMessage = "Dữ liệu đầu vào không hợp lệ: " + ex.Message };
+            }
+            catch (Exception ex)
+            {
+                // Log chi tiết lỗi để debug
+                return new GoogleLoginDesktopResult { Success = false, ErrorMessage = $"Lỗi hệ thống: {ex.GetType().Name} - {ex.Message}" };
             }
         }
     }

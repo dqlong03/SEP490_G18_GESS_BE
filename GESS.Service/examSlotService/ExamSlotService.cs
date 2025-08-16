@@ -29,6 +29,18 @@ namespace GESS.Service.examSlotService
             return await _unitOfWork.ExamSlotRepository.AddExamToExamSlotAsync(examSlotId, examId, examType);
         }
 
+        public async Task<string> AddGradeTeacherToExamSlot(ExamSlotRoomListGrade gradeTeacherRequest)
+        {
+            var result = await _unitOfWork.ExamSlotRepository.AddGradeTeacherToExamSlotAsync(gradeTeacherRequest);
+            return result;
+        }
+
+        public async  Task<string> AddTeacherToExamSlotRoom(ExamSlotRoomList examSlotRoomList)
+        {
+            var result = await _unitOfWork.ExamSlotRepository.AddTeacherToExamSlotRoomAsync(examSlotRoomList);
+            return result;
+        }
+
         public async Task<bool> ChangeStatusExamSlot(int examSlotId, string examType)
         {
             var examSlot = await _unitOfWork.ExamSlotRepository.ChangeStatusExamSlot(examSlotId, examType);
@@ -146,6 +158,16 @@ namespace GESS.Service.examSlotService
         public bool IsRoomAvailable(int roomId, DateTime slotStart, DateTime slotEnd)
         {
             return _unitOfWork.ExamSlotRepository.IsRoomAvailable(roomId, slotStart, slotEnd);
+        }
+
+        public async Task<ExamSlotCheck> IsTeacherAvailable(ExamSlotCheck examSlotCheck)
+        {
+            var result = await _unitOfWork.ExamSlotRepository.IsTeacherAvailableAsync(examSlotCheck);
+            if (result == null)
+            {
+                return new ExamSlotCheck();
+            }
+            return result;
         }
 
         public async Task<bool> SaveExamSlotsAsync(List<GeneratedExamSlot> examSlots)

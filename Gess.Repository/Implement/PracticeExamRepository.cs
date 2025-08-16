@@ -113,7 +113,7 @@ namespace GESS.Repository.Implement
                 TeacherId = exam.TeacherId,
                 CategoryExamId = exam.CategoryExamId,
                 SubjectId = exam.SubjectId,
-                ClassId = exam.ClassId,
+                ClassId = exam.ClassId??0,
                 Status = exam.Status,
                 SemesterId = exam.SemesterId,
                 PracticeExamPaperDTO = examPapers.Select(p => new PracticeExamPaperDTO
@@ -290,7 +290,11 @@ namespace GESS.Repository.Implement
                         PracExamId = practiceExam.PracExamId,
                         StudentId = studentId,
                         CheckIn = false,
-                        IsGraded = false
+                        IsGraded = false,
+                        StartTime = practiceExamCreateDto.StartDay,
+                        EndTime = practiceExamCreateDto.EndDay,
+                        StatusExam = PredefinedStatusExamInHistoryOfStudent.PENDING_EXAM,
+                       
                     };
                     await _context.PracticeExamHistories.AddAsync(practiceExamHistory);
                 }
@@ -348,8 +352,8 @@ namespace GESS.Repository.Implement
             }
 
             // 3. Lấy danh sách sinh viên và validate
-            List<Guid> studentIds;
-            if (exam.ClassId != 0) // Giữa kỳ
+            List<Guid> studentIds;  
+            if (exam.ClassId !=  null) // Giữa kỳ
             {
                 studentIds = await _context.ClassStudents
                     .Where(cs => cs.ClassId == exam.ClassId)
@@ -359,11 +363,22 @@ namespace GESS.Repository.Implement
             }
             else // Cuối kỳ
             {
-                var examSlotRoomId = exam.ExamSlotRoom?.ExamSlotRoomId;
-                studentIds = await _context.PracticeExamHistories
-                    .Where(h => h.ExamSlotRoomId == examSlotRoomId && h.PracExamId == exam.PracExamId)
-                    .OrderBy(h => h.StudentId)
-                    .Select(h => h.StudentId)
+                // Tìm ExamSlotRoom mà sinh viên này thuộc về thông qua bảng StudentExamSlotRoom
+                var studentExamSlotRoom = await _context.StudentExamSlotRoom
+                    .Include(s => s.ExamSlotRoom)
+                    .FirstOrDefaultAsync(s => s.StudentId == request.StudentId && 
+                                            s.ExamSlotRoom.PracticeExamId == exam.PracExamId);
+
+                if (studentExamSlotRoom == null)
+                {
+                    throw new Exception("Sinh viên không thuộc phòng/ca nào của bài thi này.");
+                }
+
+                var examSlotRoomId = studentExamSlotRoom.ExamSlotRoomId;
+                studentIds = await _context.StudentExamSlotRoom
+                    .Where(s => s.ExamSlotRoomId == examSlotRoomId)
+                    .OrderBy(s => s.StudentId)
+                    .Select(s => s.StudentId)
                     .ToListAsync();
             }
 
@@ -509,8 +524,11 @@ namespace GESS.Repository.Implement
                 .OrderBy(q => q.QuestionOrder)
                 .ToListAsync();
 
+            Console.WriteLine($"[DEBUG GENERATE] Paper ID: {assignedPaperId}, Total questions: {questions.Count}");
             foreach (var q in questions)
             {
+                Console.WriteLine($"[DEBUG GENERATE] Adding QuestionOrder: {q.QuestionOrder}, PracticeQuestionId: {q.PracticeQuestionId}");
+                
                 await _context.QuestionPracExams.AddAsync(new QuestionPracExam
                 {
                     PracExamHistoryId = pracExamHistoryId,
@@ -538,6 +556,7 @@ namespace GESS.Repository.Implement
                                          orderby ptq.QuestionOrder
                                          select new Model.PracticeExam.PracticeExamQuestionDetailDTO
                                          {
+                                             PracticeQuestionId = q.PracticeQuestionId, // QUAN TRỌNG: Thêm để frontend submit đúng
                                              QuestionOrder = ptq.QuestionOrder,
                                              Content = pq.Content,
                                              AnswerContent = q.Answer,
@@ -659,8 +678,11 @@ namespace GESS.Repository.Implement
             }
 
             // Thêm câu trả lời mới
+            Console.WriteLine($"[DEBUG SUBMIT] Total answers to save: {dto.Answers.Count}");
             foreach (var answer in dto.Answers)
             {
+                Console.WriteLine($"[DEBUG SUBMIT] Saving PracticeQuestionId: {answer.PracticeQuestionId}, Answer: {answer.Answer?.Substring(0, Math.Min(50, answer.Answer?.Length ?? 0))}...");
+                
                 var newQuestionPracExam = new QuestionPracExam
                 {
                     PracExamHistoryId = dto.PracExamHistoryId,
@@ -775,6 +797,58 @@ namespace GESS.Repository.Implement
                 $"HistoryId: {history.PracExamHistoryId}, " +
                 $"StartTime: {history.StartTime:yyyy-MM-dd HH:mm:ss}, " +
                 $"EndTime: {history.EndTime:yyyy-MM-dd HH:mm:ss}");
+        }
+
+        // Debug method: Kiểm tra dữ liệu trong QuestionPracExam
+        public async Task<string> DebugQuestionPracExamData(Guid pracExamHistoryId)
+        {
+            var result = new StringBuilder();
+            result.AppendLine($"=== DEBUG QuestionPracExam for HistoryId: {pracExamHistoryId} ===");
+            
+            var questionPracExams = await _context.QuestionPracExams
+                .Where(q => q.PracExamHistoryId == pracExamHistoryId)
+                .Join(_context.PracticeTestQuestions,
+                      qpe => qpe.PracticeQuestionId,
+                      ptq => ptq.PracticeQuestionId,
+                      (qpe, ptq) => new { qpe, ptq })
+                .OrderBy(x => x.ptq.QuestionOrder)
+                .ToListAsync();
+                
+            result.AppendLine($"Total QuestionPracExam records: {questionPracExams.Count}");
+            result.AppendLine();
+            
+            foreach (var item in questionPracExams)
+            {
+                result.AppendLine($"QuestionOrder: {item.ptq.QuestionOrder}");
+                result.AppendLine($"PracticeQuestionId: {item.qpe.PracticeQuestionId}");
+                result.AppendLine($"Answer: {item.qpe.Answer?.Substring(0, Math.Min(100, item.qpe.Answer?.Length ?? 0))}...");
+                result.AppendLine($"Score: {item.qpe.Score}");
+                result.AppendLine("---");
+            }
+            
+            return result.ToString();
+        }
+
+        // Debug method: Kiểm tra cấu trúc PracticeTestQuestion cho paper
+        public async Task<string> DebugPracticeTestQuestions(int pracExamPaperId)
+        {
+            var result = new StringBuilder();
+            result.AppendLine($"=== DEBUG PracticeTestQuestions for PaperId: {pracExamPaperId} ===");
+            
+            var questions = await _context.PracticeTestQuestions
+                .Where(q => q.PracExamPaperId == pracExamPaperId)
+                .OrderBy(q => q.QuestionOrder)
+                .ToListAsync();
+                
+            result.AppendLine($"Total questions: {questions.Count}");
+            result.AppendLine();
+            
+            foreach (var q in questions)
+            {
+                result.AppendLine($"QuestionOrder: {q.QuestionOrder}, PracticeQuestionId: {q.PracticeQuestionId}, Score: {q.Score}");
+            }
+            
+            return result.ToString();
         }
     }
     
