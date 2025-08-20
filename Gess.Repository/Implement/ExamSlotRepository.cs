@@ -41,7 +41,8 @@ namespace GESS.Repository.Implement
                 {
                     return false; // ExamSlot đã có bài thi nhiều lựa chọn
                 }
-                examSlot.Status = "Chưa mở ca";
+
+
                 examSlot.MultiExamId = examId;
                 //Get multiple exam 
                 var multipleExam = await _context.MultiExams
@@ -52,6 +53,8 @@ namespace GESS.Repository.Implement
                 }
                 multipleExam.Duration = (int)(examSlot.EndTime - examSlot.StartTime).TotalMinutes;
                 _context.MultiExams.Update(multipleExam);
+
+                examSlot.Status = "Chưa mở ca";
                 _context.SaveChanges();
             }
             else if (examType == "Practice")
@@ -60,7 +63,7 @@ namespace GESS.Repository.Implement
                 {
                     return false; // ExamSlot đã có bài thi thực hành
                 }
-                examSlot.Status = "Chưa mở ca";
+               
                 examSlot.PracticeExamId = examId;
                 //Get practice exam
                 var practiceExam = await _context.PracticeExams
@@ -71,6 +74,8 @@ namespace GESS.Repository.Implement
                 }
                 practiceExam.Duration = (int)(examSlot.EndTime - examSlot.StartTime).TotalMinutes;
                 _context.PracticeExams.Update(practiceExam);
+
+                examSlot.Status = "Chưa mở ca";
                 _context.SaveChanges();
             }
             else
@@ -369,6 +374,13 @@ namespace GESS.Repository.Implement
             {
                 examSlot.Status = "Đã kết thúc";
             }
+            else if (examSlot.Status == "Đã kết thúc")
+            {
+                if (examType == "Practice")
+                {
+                    examSlot.Status = "Đang chấm thi";
+                }
+            }
             else
             {
                 return false;
@@ -579,8 +591,8 @@ namespace GESS.Repository.Implement
             {
                 examSlots = examSlots.Where(es => es.ExamDate <= filterRequest.ToDate.Value);
             }
-            examSlots.OrderBy(examSlots => examSlots.SubjectId)
-                .ThenBy(examSlots => examSlots.ExamDate);
+            examSlots.OrderBy(examSlots => examSlots.ExamDate)
+                .ThenBy(examSlots => examSlots.SubjectId);
             var examSlotList = await examSlots
                 .Include(es => es.Subject)
                 .Select(es => new ExamSlotResponse
@@ -596,13 +608,13 @@ namespace GESS.Repository.Implement
                     ExamDate = es.ExamDate,
                     // Kiểm tra Proctor
                     ProctorStatus = es.ExamSlotRooms.Any(r => r.SupervisorId != null)
-                    ? "Chưa gán giảng viên coi thi"
-                    : "Đã gán giảng viên coi thi",
+                    ? "Đã gán giảng viên coi thi"
+                    : "Chưa gán giảng viên coi thi",
 
                     // Kiểm tra Grader
-                    GradeTeacherStatus = es.ExamSlotRooms.Any(r => r.ExamGradedId == null)
-                    ? "Chưa gán giảng viên chấm thi"
-                    : "Đã gán giảng viên chấm thi"
+                    GradeTeacherStatus = es.ExamSlotRooms.Any(r => r.ExamGradedId != null)
+                    ? "Đã gán giảng viên chấm thi"
+                    : "Chưa gán giảng viên chấm thi"
                 })
                 .Skip((pageIndex - 1) * pageSize)
                 .Take(pageSize)
@@ -712,8 +724,8 @@ namespace GESS.Repository.Implement
                     ExamSlotRoomId = esr.ExamSlotRoomId,
                     RoomId = esr.RoomId,
                     RoomName = esr.Room.RoomName,
-                    GradeTeacherName = esr.Supervisor != null ? esr.Supervisor.User.Fullname : "Chưa gán giáo viên coi thi",
-                    ProctorName = esr.ExamGrader != null ? esr.ExamGrader.User.Fullname : "Chưa gán giáo viên chấm thi",
+                    GradeTeacherName = esr.ExamGrader != null ? esr.ExamGrader.User.Fullname : "Chưa gán giáo viên chấm thi",
+                    ProctorName = esr.Supervisor != null ? esr.Supervisor.User.Fullname : "Chưa gán giáo viên coi thi",
                     Status = esr.Status,
                     ExamType = esr.MultiOrPractice,
                     ExamDate = esr.ExamDate,
@@ -750,18 +762,29 @@ namespace GESS.Repository.Implement
         {
             var examDate = slotStart.Date;
 
+            // Lấy tất cả ca thi trong ngày đó cho phòng này
             var examSlotRooms = _context.ExamSlotRooms
                 .Include(e => e.ExamSlot)
-                .Where(e => e.RoomId == roomId)
-                .ToList(); 
-
-            return !examSlotRooms.Any(e =>
+                .Where(e => e.RoomId == roomId && e.ExamDate.Date == examDate)
+                .ToList();
+            bool isAvailable = true;
+            foreach (var e in examSlotRooms)
             {
-                var start = examDate + e.ExamSlot.StartTime;
-                var end = examDate + e.ExamSlot.EndTime;
-                return start < slotEnd && end > slotStart;
-            });
+                var start = e.ExamDate.Add(e.ExamSlot.StartTime);
+                var end = e.ExamDate.Add(e.ExamSlot.EndTime);
+
+                // Kiểm tra overlap: (start < slotEnd && end > slotStart)
+                if (start < slotEnd && end > slotStart)
+                {
+                    isAvailable = false;
+                    break;
+                }
+            }
+
+            return isAvailable;
         }
+
+
 
         public async Task<ExamSlotCheck?> IsTeacherAvailableAsync(ExamSlotCheck examSlotCheck)
         {
@@ -810,10 +833,10 @@ namespace GESS.Repository.Implement
                 // 1. Tạo ExamSlot
                 var examSlot = new ExamSlot
                 {
-                    StartTime = item.StartTime.TimeOfDay,
-                    EndTime = item.EndTime.TimeOfDay,
+                    StartTime = item.StartTime.ToLocalTime().TimeOfDay,
+                    EndTime = item.EndTime.ToLocalTime().TimeOfDay,
                     SlotName = item.SlotName,
-                    ExamDate = item.Date,
+                    ExamDate = item.Date.ToLocalTime().Date,
                     MultiOrPractice = item.MultiOrPractice,
                     Status = string.IsNullOrEmpty(item.Status) ? "Chưa gán bài thi" : item.Status,
                     SubjectId = item.SubjectId,
@@ -830,7 +853,7 @@ namespace GESS.Repository.Implement
                     SemesterId = item.SemesterId,
                     SubjectId = item.SubjectId,
                     MultiOrPractice = item.MultiOrPractice,
-                    ExamDate = item.Date,
+                    ExamDate = item.Date.ToLocalTime().Date,
                     IsGraded = 0,
                     Status = 0
                 }).ToList();

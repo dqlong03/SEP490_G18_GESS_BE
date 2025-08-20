@@ -5,13 +5,13 @@ services:
     image: mcr.microsoft.com/mssql/server:2022-latest
     container_name: gess_sqlserver
     environment:
-      SA_PASSWORD: "123456"   # giữ nguyên như appsettings của bạn
+      SA_PASSWORD: "123"   # giữ nguyên như appsettings của bạn
       ACCEPT_EULA: "Y"
     ports:
       - "1433:1433"  # kết nối từ ngoài nếu cần
     volumes:
       - sql_data:/var/opt/mssql
-
+    restart: always
   webapi:
     build:
       context: .
@@ -20,9 +20,9 @@ services:
     ports:
       - "5000:80"   # http://IP_VPS:5000
     environment:
-      - ConnectionStrings__GessDb=Server=sqlserver,1433;Database=GessDb;User Id=sa;Password=123456;Encrypt=false;TrustServerCertificate=true;
+      - ConnectionStrings__GessDb=Server=14.225.254.72,1433;Database=GessDb;User Id=sa;Password=123;Encrypt=false;TrustServerCertificate=true;
     depends_on:
       - sqlserver
-
+    restart: always
 volumes:
   sql_data:
